@@ -120,9 +120,8 @@ def get_credential(
 
 def add_read_permission(transfer_client, auth_client, id_collection_guest, email):
     """Add read permission for a given compute canada user."""
-    id_identity = auth_client.get_identities(
-        usernames=f"{email}@computecanada.ca"
-    ).data["identities"][0]["id"]
+    auth_response = auth_client.get_identities(usernames=email)
+    id_identity = auth_response.data["identities"][0]["id"]
     result = transfer_client.add_endpoint_acl_rule(
         id_collection_guest,
         {
@@ -219,7 +218,7 @@ def main_native():
         ),
         globus_sdk.AuthClient(authorizer=authorizer_auth),
         id_collection_guest,
-        "switt4",
+        "switt4@globusid.org",
     )
 
 
