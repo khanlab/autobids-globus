@@ -2,25 +2,37 @@
 
 import os
 from pprint import pp
-import random
-import string
+
 import globus_sdk
 from globus_sdk.tokenstorage import SimpleJSONFileAdapter
 import requests
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
-CLIENT_ID_NATIVE = os.environ.get("CLIENT_ID_NATIVE")
-CLIENT_ID_NONNATIVE = os.environ.get("CLIENT_ID_NONNATIVE")
-CLIENT_SECRET = os.environ["CLIENT_SECRET"]
-ENDPOINT_ID_GRAHAM = os.environ["ENDPOINT_ID_GRAHAM"]
-USER_ID = os.environ["USER_ID"]
-COLLECTION_ID_GRAHAM = os.environ["COLLECTION_ID_GRAHAM"]
-STORAGE_GATEWAY_ID_GRAHAM = os.environ["STORAGE_GATEWAY_ID_GRAHAM"]
-GCS_MANAGER_DOMAIN_NAME = os.environ["GCS_MANAGER_DOMAIN_NAME"]
-ID_CONNECTOR = os.environ["ID_CONNECTOR"]
-USERNAME = os.environ["USERNAME"]
-TOKEN_FILE = os.environ["TOKEN_FILE"]
+from models import GlobusUser, GuestCollection
 
-FILE_ADAPTER = SimpleJSONFileAdapter(TOKEN_FILE)
+
+def get_prefixed_env_var(unprefixed_name):
+    """Get an env var, prefixed by "GLOBUS_AUTOBIDS"."""
+    return os.environ[f"GLOBUS_AUTOBIDS_{unprefixed_name}"]
+
+
+CLIENT_ID_NATIVE = get_prefixed_env_var("CLIENT_ID_NATIVE")
+CLIENT_SECRET = get_prefixed_env_var("CLIENT_SECRET")
+ENDPOINT_ID_GRAHAM = get_prefixed_env_var("ENDPOINT_ID_GRAHAM")
+USER_ID = get_prefixed_env_var("USER_ID")
+COLLECTION_ID_GRAHAM = get_prefixed_env_var("COLLECTION_ID_GRAHAM")
+STORAGE_GATEWAY_ID_GRAHAM = get_prefixed_env_var("STORAGE_GATEWAY_ID_GRAHAM")
+GCS_MANAGER_DOMAIN_NAME = get_prefixed_env_var("GCS_MANAGER_DOMAIN_NAME")
+ID_CONNECTOR = get_prefixed_env_var("ID_CONNECTOR")
+USERNAME = get_prefixed_env_var("USERNAME")
+TOKEN_FILE = get_prefixed_env_var("TOKEN_FILE")
+POSTGRES_URL = get_prefixed_env_var("POSTGRES_URL")
+AUTOBIDS_PORTAL_URL = get_prefixed_env_var("AUTOBIDS_PORTAL_URL")
+
+
+file_adapter = SimpleJSONFileAdapter(TOKEN_FILE)
+engine = create_engine(f"postgresql+psycopg2://{POSTGRES_URL}")
 
 
 def get_scope_credentials(id_endpoint):
@@ -52,7 +64,7 @@ def get_tokens_native(client_id, gcs_id, id_collection):
     """Get the tokens needed to create a collection as a native app."""
 
     client = globus_sdk.NativeAppAuthClient(client_id)
-    if not FILE_ADAPTER.file_exists():
+    if not file_adapter.file_exists():
         client.oauth2_start_flow(
             refresh_tokens=True, requested_scopes=get_scopes(gcs_id, id_collection)
         )
@@ -61,16 +73,16 @@ def get_tokens_native(client_id, gcs_id, id_collection):
         auth_code = input("Code: ").strip()
         token_response = client.oauth2_exchange_code_for_tokens(auth_code)
         pp(token_response.by_resource_server)
-        FILE_ADAPTER.store(token_response)
+        file_adapter.store(token_response)
         globus_auth_data = token_response.by_resource_server["auth.globus.org"]
         globus_transfer_data = token_response.by_resource_server[
             "transfer.api.globus.org"
         ]
         gcs_transfer_data = token_response.by_resource_server[gcs_id]
     else:
-        globus_auth_data = FILE_ADAPTER.get_token_data("auth.globus.org")
-        globus_transfer_data = FILE_ADAPTER.get_token_data("transfer.api.globus.org")
-        gcs_transfer_data = FILE_ADAPTER.get_token_data(gcs_id)
+        globus_auth_data = file_adapter.get_token_data("auth.globus.org")
+        globus_transfer_data = file_adapter.get_token_data("transfer.api.globus.org")
+        gcs_transfer_data = file_adapter.get_token_data(gcs_id)
 
     return (
         client,
@@ -166,7 +178,64 @@ def create_collection(
         },
     )
     pp(resp.json())
-    return resp.json()["data"][0]["id"]
+    collection_id = resp.json()["data"][0]["id"]
+
+    return collection_id
+
+
+def update_collection(
+    study, id_credential_user, authorizer_gcs, authorizer_transfer, authorizer_auth
+):
+    """Update a collection from a study dict, creating if necessary.
+
+    Note: This does not currently remove users from collections if the users
+    are not found in the study dict.
+    """
+    with Session(engine) as session:
+        guest_collection = (
+            session.query(GuestCollection).filter_by(study_id=study["id"]).one_or_none()
+        )
+        if guest_collection is None:
+            id_collection_guest = create_collection(
+                GCS_MANAGER_DOMAIN_NAME,
+                STORAGE_GATEWAY_ID_GRAHAM,
+                id_credential_user,
+                authorizer_gcs,
+                f"autobids_study-{study['id']}",
+                USER_ID,
+                "/home/tkuehn/code",
+                COLLECTION_ID_GRAHAM,
+            )
+            guest_collection = GuestCollection(
+                study_id=study["id"], globus_uuid=id_collection_guest
+            )
+            session.add(guest_collection)
+            session.commit()
+        existing_usernames = {
+            globus_user.username for globus_user in guest_collection.globus_users
+        }
+        for username in study["users"]:
+            if username not in existing_usernames:
+                add_read_permission(
+                    globus_sdk.TransferClient(
+                        authorizer=authorizer_transfer,
+                    ),
+                    globus_sdk.AuthClient(authorizer=authorizer_auth),
+                    str(guest_collection.globus_uuid),
+                    username,
+                )
+                globus_user = (
+                    session.query(GlobusUser).filter_by(username=username).one_or_none()
+                )
+                guest_collection.globus_users.append(
+                    globus_user
+                    if globus_user is not None
+                    else GlobusUser(
+                        username=username,
+                        guest_collection_id=guest_collection.id,
+                    )
+                )
+        session.commit()
 
 
 def main_native():
@@ -179,21 +248,21 @@ def main_native():
         client,
         access_token=tokens_auth["access_token"],
         expires_at=tokens_auth["expires_at_seconds"],
-        on_refresh=FILE_ADAPTER.on_refresh,
+        on_refresh=file_adapter.on_refresh,
     )
     authorizer_transfer = globus_sdk.RefreshTokenAuthorizer(
         tokens_transfer["refresh_token"],
         client,
         access_token=tokens_transfer["access_token"],
         expires_at=tokens_transfer["expires_at_seconds"],
-        on_refresh=FILE_ADAPTER.on_refresh,
+        on_refresh=file_adapter.on_refresh,
     )
     authorizer_gcs = globus_sdk.RefreshTokenAuthorizer(
         tokens_gcs["refresh_token"],
         client,
         access_token=tokens_gcs["access_token"],
         expires_at=tokens_gcs["expires_at_seconds"],
-        on_refresh=FILE_ADAPTER.on_refresh,
+        on_refresh=file_adapter.on_refresh,
     )
     id_credential_user = get_credential(
         GCS_MANAGER_DOMAIN_NAME,
@@ -202,24 +271,18 @@ def main_native():
         ID_CONNECTOR,
         USERNAME,
     )
-    id_collection_guest = create_collection(
-        GCS_MANAGER_DOMAIN_NAME,
-        STORAGE_GATEWAY_ID_GRAHAM,
-        id_credential_user,
-        authorizer_gcs,
-        f"sdk_collection_{''.join(random.choices(string.ascii_lowercase, k=6))}",
-        USER_ID,
-        "/home/tkuehn/code",
-        COLLECTION_ID_GRAHAM,
+    resp = requests.get(
+        f"{AUTOBIDS_PORTAL_URL}/api/globus_users",
     )
-    add_read_permission(
-        globus_sdk.TransferClient(
-            authorizer=authorizer_transfer,
-        ),
-        globus_sdk.AuthClient(authorizer=authorizer_auth),
-        id_collection_guest,
-        "switt4@globusid.org",
-    )
+    pp(resp.json())
+    for study in resp.json():
+        update_collection(
+            study,
+            id_credential_user,
+            authorizer_gcs,
+            authorizer_transfer,
+            authorizer_auth,
+        )
 
 
 if __name__ == "__main__":

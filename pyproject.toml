@@ -1,0 +1,12 @@
+[project]
+name = "Autobids-Globus"
+version = "0.0.1"
+dependencies = [
+    "globus_sdk",
+    "sqlalchemy",
+]
+
+[tool.setuptools]
+packages = [
+    "globusautobids",
+]
