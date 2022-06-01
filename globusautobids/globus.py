@@ -203,7 +203,7 @@ def update_collection(
                 authorizer_gcs,
                 f"autobids_study-{study['id']}",
                 USER_ID,
-                "/home/tkuehn/code",
+                study["path"],
                 COLLECTION_ID_GRAHAM,
             )
             guest_collection = GuestCollection(
