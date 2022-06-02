@@ -10,7 +10,7 @@ from globusautobids.models import Base
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
-postgres_url = os.environ["GLOBUS_AUTOBIDS_AUTOBIDS_PORTAL_URL"]
+postgres_url = os.environ["GLOBUS_AUTOBIDS_POSTGRES_URL"]
 config.set_main_option("sqlalchemy.url", f"postgresql+psycopg2://{postgres_url}")
 
 # Interpret the config file for Python logging.

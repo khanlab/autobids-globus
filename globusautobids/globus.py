@@ -1,7 +1,7 @@
 """Handle interactions with globus."""
 
 import os
-from pprint import pp
+from pprint import pprint
 
 import globus_sdk
 from globus_sdk.tokenstorage import SimpleJSONFileAdapter
@@ -18,7 +18,6 @@ def get_prefixed_env_var(unprefixed_name):
 
 
 CLIENT_ID_NATIVE = get_prefixed_env_var("CLIENT_ID_NATIVE")
-CLIENT_SECRET = get_prefixed_env_var("CLIENT_SECRET")
 ENDPOINT_ID_GRAHAM = get_prefixed_env_var("ENDPOINT_ID_GRAHAM")
 USER_ID = get_prefixed_env_var("USER_ID")
 COLLECTION_ID_GRAHAM = get_prefixed_env_var("COLLECTION_ID_GRAHAM")
@@ -72,7 +71,7 @@ def get_tokens_native(client_id, gcs_id, id_collection):
         print(f"Login URL: {authorize_url}")
         auth_code = input("Code: ").strip()
         token_response = client.oauth2_exchange_code_for_tokens(auth_code)
-        pp(token_response.by_resource_server)
+        pprint(token_response.by_resource_server)
         file_adapter.store(token_response)
         globus_auth_data = token_response.by_resource_server["auth.globus.org"]
         globus_transfer_data = token_response.by_resource_server[
@@ -108,7 +107,7 @@ def get_credential(
             "Authorization": authorizer_gcs_credentials.get_authorization_header()
         },
     )
-    pp(resp.json())
+    pprint(resp.json())
     for cred in resp.json()["data"]:
         if cred["storage_gateway_id"] == id_storage_gateway:
             print("Got a credential")
@@ -126,7 +125,7 @@ def get_credential(
             "storage_gateway_id": id_storage_gateway,
         },
     )
-    pp(resp.json())
+    pprint(resp.json())
     return resp.json()["data"][0]["id"]
 
 
@@ -177,7 +176,7 @@ def create_collection(
             "mapped_collection_id": id_collection_mapped,
         },
     )
-    pp(resp.json())
+    pprint(resp.json())
     collection_id = resp.json()["data"][0]["id"]
 
     return collection_id
@@ -274,7 +273,7 @@ def main_native():
     resp = requests.get(
         f"{AUTOBIDS_PORTAL_URL}/api/globus_users",
     )
-    pp(resp.json())
+    pprint(resp.json())
     for study in resp.json():
         update_collection(
             study,
