@@ -9,7 +9,7 @@ import requests
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from models import GlobusUser, GuestCollection
+from models import DatasetType, GlobusUser, GuestCollection
 
 
 def get_prefixed_env_var(unprefixed_name):
