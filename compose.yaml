@@ -1,0 +1,9 @@
+---
+services:
+  postgres:
+    image: postgres:11
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: example
+    volumes: [./compose/postgres-db:/var/lib/postgresql/data]
+    ports: [5432:5432]
