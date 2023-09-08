@@ -17,6 +17,15 @@ class DatasetType(Enum):
     RAW_DATA = 2
     DERIVED_DATA = 3
 
+    @classmethod
+    def from_bids_str(cls, bids_str: str):
+        map = {
+            "sourcedata": DatasetType.SOURCE_DATA,
+            "rawdata": DatasetType.RAW_DATA,
+            "deriveddata": DatasetType.DERIVED_DATA,
+        }
+        return map[bids_str]
+
 
 association_table = Table(
     "association",

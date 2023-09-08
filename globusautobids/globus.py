@@ -206,7 +206,9 @@ def update_collection(
                 COLLECTION_ID_GRAHAM,
             )
             guest_collection = GuestCollection(
-                study_id=study["id"], globus_uuid=id_collection_guest
+                study_id=study["id"],
+                dataset_type=DatasetType.from_bids_str(study["type"]),
+                globus_uuid=id_collection_guest,
             )
             session.add(guest_collection)
             session.commit()
