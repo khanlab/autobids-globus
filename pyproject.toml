@@ -1,12 +1,31 @@
 [project]
 name = "Autobids-Globus"
 version = "0.0.1"
-dependencies = [
-    "globus_sdk",
-    "sqlalchemy",
-]
 
 [tool.setuptools]
 packages = [
     "globusautobids",
 ]
+
+[tool.poetry]
+name = "autobids-globus"
+version = "0.1.0"
+description = ""
+authors = ["Tristan Kuehn <tkuehn@uwo.ca>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+globus-sdk = "^3.28.0"
+SQLAlchemy = "^1.4"
+psycopg2-binary = "^2.9.7"
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.0.287"
+alembic = "^1.12.0"
+black = "^23.7.0"
+alembic-postgresql-enum = "^0.1.6"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

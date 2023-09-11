@@ -9,7 +9,7 @@ import requests
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from models import GlobusUser, GuestCollection
+from models import DatasetType, GlobusUser, GuestCollection
 
 
 def get_prefixed_env_var(unprefixed_name):
@@ -206,7 +206,9 @@ def update_collection(
                 COLLECTION_ID_GRAHAM,
             )
             guest_collection = GuestCollection(
-                study_id=study["id"], globus_uuid=id_collection_guest
+                study_id=study["id"],
+                dataset_type=DatasetType.from_bids_str(study["type"]),
+                globus_uuid=id_collection_guest,
             )
             session.add(guest_collection)
             session.commit()

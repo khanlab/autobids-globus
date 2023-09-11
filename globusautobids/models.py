@@ -1,10 +1,30 @@
 """SQLAlchemy models for keeping track of globus guest collections."""
 
-from sqlalchemy import Column, ForeignKey, Integer, Table, Text
+from enum import Enum
+
+from sqlalchemy import Column, ForeignKey, Integer, Table, Text, UniqueConstraint
+from sqlalchemy import Enum as SqlEnum
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.dialects.postgresql import UUID
 
 Base = declarative_base()
+
+
+class DatasetType(Enum):
+    """Enum to describe the possible dataset types."""
+
+    SOURCE_DATA = 1
+    RAW_DATA = 2
+    DERIVED_DATA = 3
+
+    @classmethod
+    def from_bids_str(cls, bids_str: str):
+        map = {
+            "sourcedata": DatasetType.SOURCE_DATA,
+            "rawdata": DatasetType.RAW_DATA,
+            "deriveddata": DatasetType.DERIVED_DATA,
+        }
+        return map[bids_str]
 
 
 association_table = Table(
@@ -17,9 +37,15 @@ association_table = Table(
 
 class GuestCollection(Base):
     __tablename__ = "guest_collection"
+    __table_args__ = (
+        UniqueConstraint(
+            "study_id", "dataset_type", name="uq_guest_collection_study_id_dataset_type"
+        ),
+    )
 
     id = Column(Integer, primary_key=True)
-    study_id = Column(Integer, unique=True, nullable=False)
+    study_id = Column(Integer, unique=False, nullable=False)
+    dataset_type = Column(SqlEnum(DatasetType), unique=False, nullable=False)
     globus_uuid = Column(UUID, unique=True, nullable=False)
 
     globus_users = relationship(
