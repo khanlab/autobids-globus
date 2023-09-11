@@ -192,7 +192,12 @@ def update_collection(
     """
     with Session(engine) as session:
         guest_collection = (
-            session.query(GuestCollection).filter_by(study_id=study["id"]).one_or_none()
+            session.query(GuestCollection)
+            .filter_by(
+                study_id=study["id"],
+                dataset_type=DatasetType.from_bids_str(study["type"]),
+            )
+            .one_or_none()
         )
         if guest_collection is None:
             id_collection_guest = create_collection(
@@ -200,7 +205,7 @@ def update_collection(
                 STORAGE_GATEWAY_ID_GRAHAM,
                 id_credential_user,
                 authorizer_gcs,
-                f"autobids_study-{study['id']}",
+                f"autobids_study-{study['id']}_type-{study['type']}",
                 USER_ID,
                 study["path"],
                 COLLECTION_ID_GRAHAM,
