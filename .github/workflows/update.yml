@@ -1,0 +1,35 @@
+# Update for documentation purposes (triggered by autobidsportal release)
+name: Update and create tagged version
+
+on:
+  repository_dispatch: # Trigger from a remote repository event
+    types: [autobidsportal_release]
+
+jobs:
+  update_version:
+    name: Update version in autobids-docs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+
+      - name: Update pyproject.toml version
+        uses: jacobtomlinson/gha-find-replace@v3
+        with:
+          include: pyproject.toml
+          find: version = "(?:([0-9]+\.[0-9]+\.[0-9]+.+)|([0-9]+\.[0-9]+\.[0-9]+))"
+          replace: version = "${{ github.event.client_payload.version }}"
+
+      # Switch to protected commit when BP enabled
+      - name: Commit & push changes
+        run: |
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git diff-index --quiet HEAD || git commit -m "[BOT] Bump to version ${{ github.event.client_payload.version }}" -a
+          git push
+
+      - name: Create versioned tag
+        run: |
+          git tag v${{ github.event.client_payload.version }} -a -m "Release v${{ github.event.client_payload.version }}." main
+          git push --tags
