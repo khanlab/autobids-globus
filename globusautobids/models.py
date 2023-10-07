@@ -1,11 +1,13 @@
 """SQLAlchemy models for keeping track of globus guest collections."""
+from __future__ import annotations
 
 from enum import Enum
 
-from sqlalchemy import Column, ForeignKey, Integer, Table, Text, UniqueConstraint
+from sqlalchemy import Column
 from sqlalchemy import Enum as SqlEnum
-from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy import ForeignKey, Integer, Table, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
 
@@ -18,7 +20,19 @@ class DatasetType(Enum):
     DERIVED_DATA = 3
 
     @classmethod
-    def from_bids_str(cls, bids_str: str):
+    def from_bids_str(cls, bids_str: str) -> DatasetType:
+        """Get dataset type
+
+        Parameters
+        ----------
+        bids_str
+            One of sourcedata, rawdata, or deriveddata to indicate dataset type
+
+        Returns
+        -------
+        int
+            Integer representation of dataset type
+        """
         map = {
             "sourcedata": DatasetType.SOURCE_DATA,
             "rawdata": DatasetType.RAW_DATA,
@@ -29,7 +43,7 @@ class DatasetType(Enum):
 
 association_table = Table(
     "association",
-    Base.metadata,
+    Base.metadata,  # pyright: ignore
     Column("guest_collection_id", ForeignKey("guest_collection.id"), primary_key=True),
     Column("globus_user_id", ForeignKey("globus_user.id"), primary_key=True),
 )
