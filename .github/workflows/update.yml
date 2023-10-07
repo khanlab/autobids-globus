@@ -31,5 +31,29 @@ jobs:
 
       - name: Create versioned tag
         run: |
-          git tag v${{ github.event.client_payload.version }} -a -m "Release v${{ github.event.client_payload.version }}." main
+          git tag v${{ github.event.client_payload.version }} -a -m "Tag v${{ github.event.client_payload.version }}." main
           git push --tags
+
+  dispatch:
+    needs: [update_version]
+    name: Create dispatch event for docs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get latest tag
+        run: |
+          LATEST_TAG=$(git describe --tags $(git rev-list --tags --max-count=1))
+          echo "LATEST_TAG=$(echo ${LATEST_TAG:1})" >> $GITHUB_ENV
+
+      - name: Create dispatch event for autobids-docs
+        uses: peter-evans/repository-dispatch@v2
+        with:
+          token: ${{ secrets.BP_PAT_TOKEN }}
+          repository: khanlab/autobids-docs
+          event-type: autobidsportal_release
+          client-payload: '{"version": "${{ env.LATEST_TAG }}"}'
