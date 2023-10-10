@@ -1,19 +1,32 @@
 """Handle interactions with globus."""
+from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from pprint import pprint
+from typing import Any
 
 import globus_sdk
-from globus_sdk.tokenstorage import SimpleJSONFileAdapter
 import requests
+from globus_sdk.tokenstorage import SimpleJSONFileAdapter
+from models import DatasetType, GlobusUser, GuestCollection
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from models import DatasetType, GlobusUser, GuestCollection
 
+def get_prefixed_env_var(unprefixed_name: str) -> str:
+    """Get an env var, prefixed by "GLOBUS_AUTOBIDS".
 
-def get_prefixed_env_var(unprefixed_name):
-    """Get an env var, prefixed by "GLOBUS_AUTOBIDS"."""
+    Parameters
+    ----------
+    unprefixed_name
+        Suffix of environment variable
+
+    Returns
+    -------
+    str
+        Value of environment variable GLOBUS_AUTOBIDS_{unprefixed_name}
+    """
     return os.environ[f"GLOBUS_AUTOBIDS_{unprefixed_name}"]
 
 
@@ -34,21 +47,61 @@ file_adapter = SimpleJSONFileAdapter(TOKEN_FILE)
 engine = create_engine(f"postgresql+psycopg2://{POSTGRES_URL}")
 
 
-def get_scope_credentials(id_endpoint):
-    """Construct the scope needed to interact with the credentials API."""
+def get_scope_credentials(id_endpoint: str) -> str:
+    """Construct the scope needed to interact with the credentials API.
+
+    Parameters
+    ----------
+    id_endpoint
+        Client ID for user at endpoint (e.g. Graham)
+
+    Returns
+    -------
+    str
+        User scope for managing collection
+
+    """
     return f"urn:globus:auth:scope:{id_endpoint}:manage_collections"
 
 
-def get_scope_collections(id_endpoint, id_collection):
-    """Construct the scope needed to interact with the collections API."""
+def get_scope_collections(id_endpoint: str, id_collection: str) -> str:
+    """Construct the scope needed to interact with the collections API.
+
+    Parameters
+    ----------
+    id_endpoint
+        Client ID for user at endpoint (e.g. Graham)
+
+    id_collection
+        Client ID for collection at endpoint
+
+    Returns
+    -------
+    str
+        Collection scope for given credentials
+    """
     return (
-        f"urn:globus:auth:scope:{id_endpoint}:manage_collections"
+        f"{get_scope_credentials(id_endpoint)}"
         f"[*https://auth.globus.org/scopes/{id_collection}/data_access]"
     )
 
 
-def get_scopes(id_endpoint, id_collection):
-    """Get the scopes needed to create a collection as a native app."""
+def get_scopes(id_endpoint: str, id_collection: str) -> list[str]:
+    """Get the scopes needed to create a collection as a native app.
+
+    Parameters
+    ----------
+    id_endpoint
+        Client ID for user at endpoint (e.g. Graham)
+
+    id_collection
+        Client ID for collection at endpoint
+
+    Returns
+    -------
+    list[str]
+        List of relevant authentication information
+    """
     return [
         globus_sdk.scopes.AuthScopes.openid,
         globus_sdk.scopes.AuthScopes.profile,
@@ -59,10 +112,35 @@ def get_scopes(id_endpoint, id_collection):
     ]
 
 
-def get_tokens_native(client_id, gcs_id, id_collection):
-    """Get the tokens needed to create a collection as a native app."""
+def get_tokens_native(
+    client_id: str, gcs_id: str, id_collection: str
+) -> tuple[
+    globus_sdk.NativeAppAuthClient,
+    Mapping[str, Any] | None,
+    Mapping[str, Any] | None,
+    Mapping[str, Any] | None,
+]:
+    """Get the tokens needed to create a collection as a native app.
+
+    Parameters
+    ----------
+    client_id
+        App ID to connect to
+
+    gcs_id
+        Client ID for user at endpoint (e.g. Graham)
+
+    id_collection
+        Client ID for collection at endpoint
+
+    Returns
+    -------
+    tuple[globus_sdk.NativeAppAuthClient, Mapping[str, Any] | None, Mapping[str, Any] | None, Mapping[str, Any] | None]
+        Authentication client an token responses
+    """
 
     client = globus_sdk.NativeAppAuthClient(client_id)
+    # If file with credentials doesn't exist, authenticate and get token
     if not file_adapter.file_exists():
         client.oauth2_start_flow(
             refresh_tokens=True, requested_scopes=get_scopes(gcs_id, id_collection)
@@ -78,6 +156,7 @@ def get_tokens_native(client_id, gcs_id, id_collection):
             "transfer.api.globus.org"
         ]
         gcs_transfer_data = token_response.by_resource_server[gcs_id]
+    # Grab token from file
     else:
         globus_auth_data = file_adapter.get_token_data("auth.globus.org")
         globus_transfer_data = file_adapter.get_token_data("transfer.api.globus.org")
@@ -92,13 +171,37 @@ def get_tokens_native(client_id, gcs_id, id_collection):
 
 
 def get_credential(
-    domain_name_gcs_manager,
-    id_storage_gateway,
-    authorizer_gcs_credentials,
-    id_connector,
-    username,
-):
-    """Get a user credential, or create one if none exists."""
+    domain_name_gcs_manager: str,
+    id_storage_gateway: str,
+    authorizer_gcs_credentials: globus_sdk.RefreshTokenAuthorizer,
+    id_connector: str,
+    username: str,
+) -> str:
+    """Get a user credential, or create one if none exists.
+
+    Parameters
+    ----------
+    domain_name_gcs_manager
+        URL of guest collection to get user credentials from
+
+    id_storage_gateway
+        Unique id for storage from guest collection
+
+    authorizer_gcs_credentials
+        Access token to guest collection
+
+    id_connector
+        Globus connector id environment variable
+
+    username
+        Username on guest collection service
+
+    Returns
+    -------
+    str
+        User credentials
+    """
+    # Query credential from guest collection
     print("Querying user credentials")
     resp = requests.get(
         f"https://{domain_name_gcs_manager}/api/user_credentials",
@@ -108,10 +211,12 @@ def get_credential(
         },
     )
     pprint(resp.json())
+    # Search for credential matching storage
     for cred in resp.json()["data"]:
         if cred["storage_gateway_id"] == id_storage_gateway:
             print("Got a credential")
             return cred["id"]
+    # If no existing credential found, create a new one with access
     print("No credential... Making a new one.")
     resp = requests.post(
         f"https://{domain_name_gcs_manager}/api/user_credentials",
@@ -129,8 +234,28 @@ def get_credential(
     return resp.json()["data"][0]["id"]
 
 
-def add_read_permission(transfer_client, auth_client, id_collection_guest, email):
-    """Add read permission for a given compute canada user."""
+def add_read_permission(
+    transfer_client: globus_sdk.TransferClient,
+    auth_client: globus_sdk.AuthClient,
+    id_collection_guest: str,
+    email: str,
+):
+    """Add read permission for a given compute canada user.
+
+    Parameters
+    ----------
+    transfer_client
+        Transfer client to move data with if authorization is provided
+
+    auth_client
+        Authentication client to get identities from
+
+    id_collection_guest
+        Guest collection UUID
+
+    email
+        User with access to authenticate on client
+    """
     auth_response = auth_client.get_identities(usernames=email)
     id_identity = auth_response.data["identities"][0]["id"]
     result = transfer_client.add_endpoint_acl_rule(
@@ -147,17 +272,48 @@ def add_read_permission(transfer_client, auth_client, id_collection_guest, email
 
 
 def create_collection(
-    domain_name_gcs_manager,
-    id_storage_gateway,
-    id_credential_user,
-    authorizer_gcs_collections,
-    display_name,
-    id_identity,
-    collection_base_path,
-    id_collection_mapped,
-):
-    # pylint: disable=too-many-arguments
-    """Create a collection using pre-configured authentication."""
+    domain_name_gcs_manager: str,
+    id_storage_gateway: str,
+    id_credential_user: str,
+    authorizer_gcs_collections: globus_sdk.RefreshTokenAuthorizer,
+    display_name: str,
+    id_identity: str,
+    collection_base_path: str,
+    id_collection_mapped: str,
+) -> str:
+    """Create a collection using pre-configured authentication.
+
+    Parameters
+    ----------
+    domain_name_gcs_manager
+        URL of guest collection to get user credentials from
+
+    id_storage_gateway
+        Unique id for storage from guest collection
+
+    id_credential_user
+        Credential for user
+
+    authorizer_gcs_collections
+        Authorizer to fetch access token
+
+    display_name
+        Collection name
+
+    id_identity
+        ID to add to collection
+
+    collection_base_path
+        Path to where collection is stored
+
+    id_collection_mapped
+        Unique ID of mapped collection
+
+    Returns
+    -------
+    str
+        Unique collection ID
+    """
     print("Making a new collection")
     resp = requests.post(
         f"https://{domain_name_gcs_manager}/api/collections",
@@ -183,14 +339,36 @@ def create_collection(
 
 
 def update_collection(
-    study, id_credential_user, authorizer_gcs, authorizer_transfer, authorizer_auth
+    study: Mapping[str, str],
+    id_credential_user: str,
+    authorizer_gcs: globus_sdk.RefreshTokenAuthorizer,
+    authorizer_transfer: globus_sdk.RefreshTokenAuthorizer,
+    authorizer_auth: globus_sdk.RefreshTokenAuthorizer,
 ):
     """Update a collection from a study dict, creating if necessary.
 
     Note: This does not currently remove users from collections if the users
     are not found in the study dict.
+
+    Parameters
+    ----------
+    study
+        ID associated with study
+
+    id_credential_user
+        ID associated with user credentials
+
+    authorizer_gcs
+        Authorizer for guest collection client
+
+    authorizer_transfer
+        Authorizer for transfer client
+
+    authorizer_auth
+        Authorizer for autherization client
     """
     with Session(engine) as session:
+        # Query guest collection by study id
         guest_collection = (
             session.query(GuestCollection)
             .filter_by(
@@ -199,6 +377,7 @@ def update_collection(
             )
             .one_or_none()
         )
+        # If no collection found, create one
         if guest_collection is None:
             id_collection_guest = create_collection(
                 GCS_MANAGER_DOMAIN_NAME,
@@ -210,16 +389,19 @@ def update_collection(
                 study["path"],
                 COLLECTION_ID_GRAHAM,
             )
-            guest_collection = GuestCollection(
+            # Add to database
+            guest_collection = GuestCollection(  # pyright: ignore
                 study_id=study["id"],
                 dataset_type=DatasetType.from_bids_str(study["type"]),
                 globus_uuid=id_collection_guest,
             )
             session.add(guest_collection)
             session.commit()
+        # Existing users with access to guest collection
         existing_usernames = {
             globus_user.username for globus_user in guest_collection.globus_users
         }
+        # Add auth for users with study access
         for username in study["users"]:
             if username not in existing_usernames:
                 add_read_permission(
@@ -236,7 +418,7 @@ def update_collection(
                 guest_collection.globus_users.append(
                     globus_user
                     if globus_user is not None
-                    else GlobusUser(
+                    else GlobusUser(  # pyright: ignore
                         username=username,
                         guest_collection_id=guest_collection.id,
                     )
@@ -250,24 +432,24 @@ def main_native():
         CLIENT_ID_NATIVE, ENDPOINT_ID_GRAHAM, COLLECTION_ID_GRAHAM
     )
     authorizer_auth = globus_sdk.RefreshTokenAuthorizer(
-        tokens_auth["refresh_token"],
+        tokens_auth["refresh_token"],  # pyright: ignore
         client,
-        access_token=tokens_auth["access_token"],
-        expires_at=tokens_auth["expires_at_seconds"],
+        access_token=tokens_auth["access_token"],  # pyright: ignore
+        expires_at=tokens_auth["expires_at_seconds"],  # pyright: ignore
         on_refresh=file_adapter.on_refresh,
     )
     authorizer_transfer = globus_sdk.RefreshTokenAuthorizer(
-        tokens_transfer["refresh_token"],
+        tokens_transfer["refresh_token"],  # pyright: ignore
         client,
-        access_token=tokens_transfer["access_token"],
-        expires_at=tokens_transfer["expires_at_seconds"],
+        access_token=tokens_transfer["access_token"],  # pyright: ignore
+        expires_at=tokens_transfer["expires_at_seconds"],  # pyright: ignore
         on_refresh=file_adapter.on_refresh,
     )
     authorizer_gcs = globus_sdk.RefreshTokenAuthorizer(
-        tokens_gcs["refresh_token"],
+        tokens_gcs["refresh_token"],  # pyright: ignore
         client,
-        access_token=tokens_gcs["access_token"],
-        expires_at=tokens_gcs["expires_at_seconds"],
+        access_token=tokens_gcs["access_token"],  # pyright: ignore
+        expires_at=tokens_gcs["expires_at_seconds"],  # pyright: ignore
         on_refresh=file_adapter.on_refresh,
     )
     id_credential_user = get_credential(
