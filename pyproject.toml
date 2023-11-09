@@ -1,6 +1,6 @@
 [project]
 name = "Autobids-Globus"
-version = "2.2.0"
+version = "2.2.1"
 
 [tool.setuptools]
 packages = [
@@ -9,7 +9,7 @@ packages = [
 
 [tool.poetry]
 name = "autobids-globus"
-version = "2.2.0"
+version = "2.2.1"
 description = ""
 authors = ["Tristan Kuehn <tkuehn@uwo.ca>"]
 readme = "README.md"
